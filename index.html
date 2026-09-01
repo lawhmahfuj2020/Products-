@@ -293,13 +293,43 @@ document.getElementById('file-input').addEventListener('change', e => {
 });
 
 async function uploadCloudinary(file) {
+  // Resize image before upload to avoid size issues
+  const resized = await resizeImage(file, 800);
   const fd = new FormData();
-  fd.append('file', file);
+  fd.append('file', resized);
   fd.append('upload_preset', CL_PRESET);
-  const res = await fetch(`https://api.cloudinary.com/v1_1/${CL_NAME}/image/upload`, {method:'POST',body:fd});
+  fd.append('cloud_name', CL_NAME);
+  const res = await fetch(`https://api.cloudinary.com/v1_1/${CL_NAME}/image/upload`, {
+    method: 'POST',
+    body: fd
+  });
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error('Cloudinary error: ' + err);
+  }
   const d = await res.json();
-  if (!d.secure_url) throw new Error('Upload failed');
+  if (!d.secure_url) throw new Error('No URL returned: ' + JSON.stringify(d));
   return d.secure_url;
+}
+
+function resizeImage(file, maxSize) {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = e => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        let w = img.width, h = img.height;
+        if (w > h && w > maxSize) { h = h * maxSize / w; w = maxSize; }
+        else if (h > maxSize) { w = w * maxSize / h; h = maxSize; }
+        canvas.width = w; canvas.height = h;
+        canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+        canvas.toBlob(blob => resolve(blob), 'image/jpeg', 0.85);
+      };
+      img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+  });
 }
 
 // ── SAVE PRODUCT ──
@@ -371,184 +401,4 @@ async function startScanner() {
 
 function stopScanner() {
   scanning=false;
-  clearTimeout(scanTimer);
-  if (scanStream) { scanStream.getTracks().forEach(t=>t.stop()); scanStream=null; }
-}
-
-function captureBase64() {
-  const v=document.getElementById('video');
-  const c=document.getElementById('canvas');
-  c.width=v.videoWidth||640; c.height=v.videoHeight||480;
-  c.getContext('2d').drawImage(v,0,0);
-  return c.toDataURL('image/jpeg',0.75).split(',')[1];
-}
-
-// ── IMAGE SIMILARITY using pixel comparison ──
-async function getImageFingerprint(base64) {
-  return new Promise(resolve => {
-    const img = new Image();
-    img.onload = () => {
-      const c = document.createElement('canvas');
-      c.width=16; c.height=16;
-      const ctx = c.getContext('2d');
-      ctx.drawImage(img,0,0,16,16);
-      const d = ctx.getImageData(0,0,16,16).data;
-      const fp = [];
-      for(let i=0;i<d.length;i+=4) fp.push((d[i]+d[i+1]+d[i+2])/3);
-      resolve(fp);
-    };
-    img.src = 'data:image/jpeg;base64,'+base64;
-  });
-}
-
-async function getUrlFingerprint(url) {
-  return new Promise(resolve => {
-    const img = new Image();
-    img.crossOrigin='anonymous';
-    img.onload = () => {
-      const c = document.createElement('canvas');
-      c.width=16; c.height=16;
-      const ctx = c.getContext('2d');
-      ctx.drawImage(img,0,0,16,16);
-      try {
-        const d = ctx.getImageData(0,0,16,16).data;
-        const fp = [];
-        for(let i=0;i<d.length;i+=4) fp.push((d[i]+d[i+1]+d[i+2])/3);
-        resolve(fp);
-      } catch(e) { resolve(null); }
-    };
-    img.onerror = () => resolve(null);
-    // Use Cloudinary transform for CORS
-    img.src = url.replace('/upload/','/upload/w_32,h_32,c_fill/');
-  });
-}
-
-function similarity(a, b) {
-  if (!a||!b||a.length!==b.length) return 0;
-  let diff=0;
-  for(let i=0;i<a.length;i++) diff+=Math.abs(a[i]-b[i]);
-  const maxDiff=255*a.length;
-  return 1-(diff/maxDiff);
-}
-
-async function doScan() {
-  if (!scanning || resultVisible || allProducts.length===0) {
-    if (scanning && !resultVisible) scanTimer=setTimeout(doScan,2000);
-    return;
-  }
-  const dot=document.getElementById('dot');
-  const stext=document.getElementById('stext');
-  dot.className='dot scanning';
-  stext.textContent='Matching…';
-
-  try {
-    const base64 = captureBase64();
-    const camFP = await getImageFingerprint(base64);
-
-    // Compare with all saved products
-    let bestMatch=null, bestScore=0;
-    for (const p of allProducts) {
-      const pFP = await getUrlFingerprint(p.image_url);
-      if (!pFP) continue;
-      const score = similarity(camFP, pFP);
-      if (score > bestScore) { bestScore=score; bestMatch=p; }
-    }
-
-    // Threshold: 0.72 = good match for distinct products
-    if (bestMatch && bestScore >= 0.72) {
-      showResult(bestMatch, bestScore);
-    } else {
-      showNoMatch();
-      scanTimer=setTimeout(doScan,2000);
-    }
-  } catch(e) {
-    scanTimer=setTimeout(doScan,2500);
-  }
-
-  dot.className='dot';
-  stext.textContent='Scanning…';
-}
-
-function showResult(p, score) {
-  resultVisible=true;
-  document.getElementById('no-match').classList.remove('show');
-  document.getElementById('r-img').src = p.image_url;
-  document.getElementById('r-name').textContent = p.name;
-  document.getElementById('r-cat').textContent = p.category||'';
-  document.getElementById('r-sell').textContent = '৳'+p.selling_price;
-  document.getElementById('r-code').textContent = p.purchase_code;
-  document.getElementById('r-purchase').textContent = '৳'+decode(p.purchase_code);
-  document.getElementById('r-conf').textContent = 'Match confidence: '+Math.round(score*100)+'%';
-  document.getElementById('result-panel').classList.add('show');
-}
-
-function showNoMatch() {
-  document.getElementById('result-panel').classList.remove('show');
-  const nm=document.getElementById('no-match');
-  nm.classList.add('show');
-  setTimeout(()=>nm.classList.remove('show'),2000);
-}
-
-function closeResult() {
-  resultVisible=false;
-  document.getElementById('result-panel').classList.remove('show');
-  scanTimer=setTimeout(doScan,1000);
-}
-
-// ── PRODUCTS LIST ──
-let allCache=[];
-async function loadProducts() {
-  const list=document.getElementById('products-list');
-  list.innerHTML='<div style="color:var(--muted);text-align:center;padding:24px">Loading…</div>';
-  const {data}=await db.from('products').select('*').order('created_at',{ascending:false});
-  allCache=data||[];
-  renderProducts(allCache);
-}
-
-function renderProducts(arr) {
-  const list=document.getElementById('products-list');
-  if (!arr.length) {
-    list.innerHTML='<div id="empty">No products yet.<br>Add your first product from the Add tab.</div>';
-    return;
-  }
-  list.innerHTML=arr.map(p=>`
-    <div class="pitem">
-      <img src="${p.image_url}" alt="${p.name}" onerror="this.style.opacity=0.3">
-      <div class="pitem-info">
-        <div class="pitem-name">${p.name}</div>
-        <div class="pitem-prices">
-          <span class="sp">৳${p.selling_price}</span>
-          <span class="cp">${p.purchase_code} = ৳${decode(p.purchase_code)}</span>
-        </div>
-        ${p.category?`<div class="pitem-cat">${p.category}</div>`:''}
-      </div>
-      <button class="pitem-del" onclick="delProduct('${p.id}',this)">
-        <svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>
-      </button>
-    </div>
-  `).join('');
-}
-
-function filterProducts(q) {
-  const f=allCache.filter(p=>
-    p.name.toLowerCase().includes(q.toLowerCase())||
-    (p.category||'').toLowerCase().includes(q.toLowerCase())
-  );
-  renderProducts(f);
-}
-
-async function delProduct(id, btn) {
-  if (!confirm('Delete this product?')) return;
-  btn.disabled=true;
-  const {error}=await db.from('products').delete().eq('id',id);
-  if (error) { toast('Delete failed','err'); btn.disabled=false; return; }
-  toast('Deleted','ok');
-  loadProducts();
-  await loadAllProducts();
-}
-
-// START
-startScanner();
-</script>
-</body>
-</html>
+  clearTim
