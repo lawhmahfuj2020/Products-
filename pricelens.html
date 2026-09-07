@@ -1,0 +1,940 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#080c14">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>PriceLens</title>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/@zxing/library@0.19.1/umd/index.min.js"></script>
+<style>
+:root{
+  --bg:#fff8f0;
+  --s1:#ffffff;
+  --s2:#fff3e6;
+  --s3:#ffe9d0;
+  --border:rgba(200,120,40,0.1);
+  --border2:rgba(200,120,40,0.2);
+  --text:#1a0f00;
+  --text2:#7a5030;
+  --text3:#c89060;
+  --amber:#e07800;
+  --amber-dim:rgba(224,120,0,0.1);
+  --amber-glow:rgba(224,120,0,0.3);
+  --green:#00a854;
+  --gold:#d4880a;
+  --red:#e03030;
+  --warm-white:#fff8f0;
+  --card-shadow:0 2px 16px rgba(200,120,40,0.1);
+}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;background:var(--bg);color:var(--text);font-family:'Poppins',-apple-system,sans-serif;overflow:hidden}
+
+/* NAV */
+#nav{position:fixed;bottom:0;left:0;right:0;z-index:100;background:#fff;border-top:1px solid var(--border2);display:flex;height:64px;box-shadow:0 -4px 20px rgba(200,120,40,0.08)}
+.nb{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;background:none;border:none;color:var(--text3);font-size:10px;font-weight:500;cursor:pointer;font-family:'Poppins',sans-serif;transition:color 0.2s}
+.nb svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.nb.active{color:var(--amber)}
+
+/* PAGES */
+.page{position:fixed;inset:0;bottom:64px;overflow-y:auto;display:none;-webkit-overflow-scrolling:touch}
+.page.active{display:block}
+
+/* SCANNER */
+#page-scanner{background:#000;overflow:hidden}
+#video{width:100%;height:100%;object-fit:cover;display:block}
+#canvas{display:none}
+#topbar{position:absolute;top:0;left:0;right:0;padding:48px 20px 20px;background:linear-gradient(to bottom,rgba(0,0,0,0.75),transparent);display:flex;align-items:center;justify-content:space-between}
+#appname{font-size:20px;font-weight:800;color:#fff;letter-spacing:-0.5px}
+#appname span{color:#ffb347}
+#pbadge{background:rgba(255,179,71,0.25);border:1px solid rgba(255,179,71,0.4);color:#ffb347;font-size:11px;font-weight:600;padding:5px 12px;border-radius:20px}
+
+/* Viewfinder */
+#vf{position:absolute;top:50%;left:50%;transform:translate(-50%,-60%);width:78%;aspect-ratio:1}
+.vc{position:absolute;width:28px;height:28px}
+.vc.tl{top:0;left:0;border-top:3px solid #ffb347;border-left:3px solid #ffb347;border-radius:5px 0 0 0}
+.vc.tr{top:0;right:0;border-top:3px solid #ffb347;border-right:3px solid #ffb347;border-radius:0 5px 0 0}
+.vc.bl{bottom:0;left:0;border-bottom:3px solid #ffb347;border-left:3px solid #ffb347;border-radius:0 0 0 5px}
+.vc.br{bottom:0;right:0;border-bottom:3px solid #ffb347;border-right:3px solid #ffb347;border-radius:0 0 5px 0}
+#sline{position:absolute;left:0;right:0;height:2px;background:linear-gradient(to right,transparent,#ffb347,transparent);box-shadow:0 0 12px rgba(255,179,71,0.6);animation:sl 2s ease-in-out infinite}
+@keyframes sl{0%{top:0;opacity:0}10%{opacity:1}90%{opacity:1}100%{top:100%;opacity:0}}
+#spill{position:absolute;top:-40px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,0.7);backdrop-filter:blur(10px);border:1px solid rgba(255,179,71,0.3);color:#fff;font-size:12px;font-weight:500;padding:6px 16px;border-radius:20px;display:flex;align-items:center;gap:8px;white-space:nowrap}
+.ldot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
+.ldot.ready{background:#4cd964;animation:lp 1.2s ease-in-out infinite}
+.ldot.scan{background:#ffb347;animation:lp 0.5s ease-in-out infinite}
+.ldot.off{background:#888}
+@keyframes lp{0%,100%{opacity:1}50%{opacity:0.3}}
+#vfhint{position:absolute;bottom:-32px;left:50%;transform:translateX(-50%);color:rgba(255,255,255,0.5);font-size:12px;white-space:nowrap}
+
+/* Search */
+#scan-search-wrap{position:absolute;bottom:10%;left:16px;right:16px}
+#scan-search{width:100%;background:rgba(255,255,255,0.95);backdrop-filter:blur(12px);border:1.5px solid rgba(224,120,0,0.3);border-radius:16px;padding:14px 16px 14px 46px;color:var(--text);font-size:15px;font-family:'Poppins',sans-serif;outline:none;-webkit-appearance:none}
+#scan-search::placeholder{color:var(--text3)}
+#scan-search:focus{border-color:var(--amber)}
+#scan-search-icon{position:absolute;left:28px;top:50%;transform:translateY(-50%);width:18px;height:18px;stroke:var(--text3);fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+#scan-results{position:absolute;bottom:100%;left:0;right:0;margin-bottom:8px;background:#fff;border:1.5px solid var(--border2);border-radius:18px;overflow:hidden;display:none;max-height:280px;overflow-y:auto;box-shadow:var(--card-shadow)}
+.sresult{padding:14px 16px;border-bottom:1px solid var(--border);cursor:pointer;display:flex;align-items:center;gap:12px}
+.sresult:last-child{border-bottom:none}
+.sresult:active{background:var(--s2)}
+.sresult img{width:46px;height:46px;border-radius:10px;object-fit:cover;background:var(--s2);flex-shrink:0}
+.sresult-name{font-size:14px;font-weight:600;color:var(--text)}
+.sresult-price{font-size:13px;color:var(--amber);font-weight:700;margin-top:2px}
+
+/* RESULT SHEET */
+#rsheet{position:absolute;bottom:0;left:0;right:0;background:#fff;border-radius:28px 28px 0 0;border-top:2px solid var(--border2);padding:0 20px 32px;transform:translateY(100%);transition:transform 0.4s cubic-bezier(0.32,0.72,0,1);pointer-events:all;z-index:50}
+#rsheet.show{transform:translateY(0)}
+.shandle{width:40px;height:4px;background:#e0c8a0;border-radius:2px;margin:12px auto 20px}
+.sheader{display:flex;gap:14px;align-items:flex-start;margin-bottom:18px}
+#rimg{width:82px;height:82px;border-radius:16px;object-fit:cover;background:var(--s2);flex-shrink:0;border:2px solid var(--border2)}
+.smeta{flex:1;min-width:0;padding-top:2px}
+#rcat{font-size:11px;color:var(--amber);font-weight:700;letter-spacing:0.5px;margin-bottom:5px;text-transform:uppercase}
+#rname{font-size:18px;font-weight:700;line-height:1.3;color:var(--text)}
+.shero{background:linear-gradient(135deg,#fff3e0,#ffe0b2);border-radius:18px;padding:18px 20px;margin-bottom:12px;border:1.5px solid rgba(224,120,0,0.2);display:flex;align-items:center;justify-content:space-between}
+.sherol{font-size:11px;color:var(--text2);margin-bottom:5px;font-weight:500}
+.sherov{font-size:40px;font-weight:800;color:var(--amber);line-height:1;letter-spacing:-1.5px}
+.sprofit{background:rgba(0,168,84,0.1);border:1.5px solid rgba(0,168,84,0.25);color:var(--green);font-size:12px;font-weight:700;padding:6px 12px;border-radius:10px}
+.sdetrow{display:flex;gap:10px;margin-bottom:14px}
+.sdet{flex:1;background:var(--s2);border-radius:14px;padding:14px 15px;border:1px solid var(--border2)}
+.sdetl{font-size:10px;color:var(--text2);margin-bottom:6px;font-weight:600;text-transform:uppercase;letter-spacing:0.3px}
+.sdetv{font-size:22px;font-weight:700}
+#rcode{color:var(--gold)}
+#rpurch{color:var(--amber)}
+#rsource{font-size:11px;color:var(--text3);text-align:center;margin-bottom:14px}
+#rclose{width:100%;padding:15px;border-radius:14px;background:var(--s2);border:1.5px solid var(--border2);color:var(--text);font-size:15px;font-weight:600;font-family:'Poppins',sans-serif;cursor:pointer}
+
+/* NO MATCH */
+#nomatch{position:absolute;bottom:0;left:0;right:0;background:#fff;border-radius:28px 28px 0 0;border-top:2px solid var(--border2);padding:24px 20px 36px;text-align:center;transform:translateY(100%);transition:transform 0.35s cubic-bezier(0.32,0.72,0,1);pointer-events:all;z-index:50}
+#nomatch.show{transform:translateY(0)}
+.nmico{width:56px;height:56px;border-radius:50%;background:rgba(224,48,48,0.08);border:2px solid rgba(224,48,48,0.15);display:flex;align-items:center;justify-content:center;margin:0 auto 14px}
+.nmico svg{width:26px;height:26px;stroke:var(--red);fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+#nmtitle{font-size:16px;font-weight:700;margin-bottom:8px;color:var(--text)}
+#nmdetail{font-size:13px;color:var(--text2);line-height:1.6;margin-bottom:14px}
+
+/* ADD PAGE */
+#page-add{background:var(--bg)}
+.phead{padding:48px 20px 16px;background:linear-gradient(180deg,#fff 0%,transparent 100%)}
+.ptitle{font-size:24px;font-weight:800;letter-spacing:-0.5px;color:var(--text)}
+.psub{font-size:13px;color:var(--text2);margin-top:4px}
+.pbody{padding:8px 16px 40px}
+.sec{margin-bottom:16px}
+.seclbl{font-size:12px;font-weight:600;color:var(--text2);margin-bottom:10px;letter-spacing:0.3px;text-transform:uppercase}
+.phototap{width:100%;aspect-ratio:16/10;background:var(--s2);border:2px dashed rgba(224,120,0,0.3);border-radius:20px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;cursor:pointer;position:relative;overflow:hidden}
+.phototap img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:18px}
+.ptapico{width:52px;height:52px;border-radius:16px;background:var(--amber-dim);border:2px solid rgba(224,120,0,0.2);display:flex;align-items:center;justify-content:center;position:relative;z-index:1}
+.ptapico svg{width:24px;height:24px;stroke:var(--amber);fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.phototap span{font-size:13px;color:var(--text2);position:relative;z-index:1;font-weight:500}
+#fileinput{display:none}
+.inpgrp{background:#fff;border-radius:16px;overflow:hidden;border:1.5px solid var(--border2);box-shadow:var(--card-shadow)}
+.inprow{display:flex;align-items:center;padding:0 16px;border-bottom:1px solid var(--border)}
+.inprow:last-child{border-bottom:none}
+.inprow label{font-size:13px;color:var(--text2);width:100px;flex-shrink:0;font-weight:600}
+.inprow input{flex:1;background:none;border:none;color:var(--text);font-size:15px;font-weight:500;font-family:'Poppins',sans-serif;padding:14px 0;outline:none;-webkit-appearance:none}
+.inprow input::placeholder{color:var(--text3)}
+.coderow{display:flex;align-items:center;padding:14px 16px;background:linear-gradient(to right,#fff9f0,#fff3e0)}
+.coderow label{font-size:13px;color:var(--text2);width:100px;flex-shrink:0;font-weight:600}
+#codedisp{font-size:20px;font-weight:800;color:var(--gold);flex:1}
+.scanbarbtn{width:100%;background:linear-gradient(135deg,#fff3e0,#ffe0b2);border:1.5px solid rgba(224,120,0,0.25);border-radius:14px;padding:13px;color:var(--amber);font-size:13px;font-weight:700;font-family:'Poppins',sans-serif;cursor:pointer;margin-top:10px}
+.scanbarbtn:active{opacity:0.8}
+.savebtn{width:100%;padding:16px;border-radius:16px;border:none;background:linear-gradient(135deg,#f0900a,#e07800);color:#fff;font-size:16px;font-weight:800;font-family:'Poppins',sans-serif;cursor:pointer;margin-top:16px;letter-spacing:-0.2px;box-shadow:0 4px 16px rgba(224,120,0,0.35)}
+.savebtn:active{opacity:0.88}
+
+/* PRODUCTS PAGE */
+#page-products{background:var(--bg)}
+.prodhead{padding:48px 20px 16px}
+.prodtitle{font-size:24px;font-weight:800;letter-spacing:-0.5px;color:var(--text)}
+.prodct{font-size:13px;color:var(--text2);margin-top:4px}
+.sbox{margin:0 16px 16px;background:#fff;border:1.5px solid var(--border2);border-radius:14px;padding:12px 16px;display:flex;align-items:center;gap:10px;box-shadow:var(--card-shadow)}
+.sbox svg{width:16px;height:16px;stroke:var(--text3);fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;flex-shrink:0}
+#search{background:none;border:none;color:var(--text);font-size:15px;font-family:'Poppins',sans-serif;outline:none;flex:1}
+#search::placeholder{color:var(--text3)}
+.plist{padding:0 16px 24px}
+.pcard{background:#fff;border:1px solid var(--border);border-radius:18px;padding:14px;display:flex;gap:12px;align-items:center;margin-bottom:10px;box-shadow:var(--card-shadow)}
+.pcard img{width:60px;height:60px;border-radius:12px;object-fit:cover;background:var(--s2);flex-shrink:0;border:1px solid var(--border2)}
+.pcinfo{flex:1;min-width:0}
+.pcname{font-size:15px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--text)}
+.pcprices{display:flex;align-items:center;gap:8px;margin-top:4px;flex-wrap:wrap}
+.pcsell{font-size:14px;font-weight:700;color:var(--amber)}
+.pccode{font-size:12px;color:var(--gold);background:rgba(212,136,10,0.1);padding:2px 8px;border-radius:6px;font-weight:600}
+.pcbc{font-size:11px;color:var(--text3);margin-top:3px}
+.pcdel{background:none;border:none;padding:8px;cursor:pointer;flex-shrink:0;color:var(--text3)}
+.pcdel svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.empty{text-align:center;padding:60px 20px;color:var(--text2)}
+.emptyico{font-size:44px;margin-bottom:14px;display:none}
+.emptytitle{font-size:17px;font-weight:700;color:var(--text);margin-bottom:6px}
+.emptysub{font-size:13px;line-height:1.7}
+
+/* BARCODE MODAL */
+#bc-modal{display:none;position:fixed;inset:0;z-index:200;background:#000}
+#bc-video{width:100%;height:100%;object-fit:cover}
+
+/* PRICE GROUPS MODAL */
+#pg-modal{display:none;position:fixed;inset:0;z-index:300;align-items:flex-end}
+#pg-overlay{position:absolute;inset:0;background:rgba(0,0,0,0.5);backdrop-filter:blur(6px)}
+#pg-sheet{position:relative;z-index:1;width:100%;background:#fff;border-radius:24px 24px 0 0;border-top:2px solid var(--border2);padding:16px 16px 40px;box-shadow:0 -8px 32px rgba(200,120,40,0.15)}
+
+/* TOAST */
+#toast{position:fixed;bottom:80px;left:50%;transform:translateX(-50%) translateY(12px);background:#fff;border:1.5px solid var(--border2);color:var(--text);border-radius:24px;padding:10px 20px;font-size:13px;font-weight:500;opacity:0;transition:all 0.25s;z-index:999;white-space:nowrap;pointer-events:none;box-shadow:var(--card-shadow)}
+#toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+#toast.ok{border-color:rgba(0,168,84,0.4);color:var(--green)}
+#toast.err{border-color:rgba(224,48,48,0.4);color:var(--red)}
+
+/* LOADER */
+#loader{position:fixed;inset:0;background:rgba(255,248,240,0.9);backdrop-filter:blur(12px);display:none;align-items:center;justify-content:center;z-index:500;flex-direction:column;gap:14px}
+.lring{width:40px;height:40px;border:3px solid var(--border2);border-top-color:var(--amber);border-radius:50%;animation:spin 0.7s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.ltxt{font-size:13px;color:var(--text2);font-weight:500}
+</style>
+</head>
+<body>
+
+<!-- SCANNER -->
+<div id="page-scanner" class="page active">
+  <video id="video" playsinline autoplay muted></video>
+  <canvas id="canvas"></canvas>
+  <div id="topbar">
+    <div id="appname">Price<span>Lens</span></div>
+    <div id="pbadge">0 products</div>
+  </div>
+  <div id="vf">
+    <div class="vc tl"></div><div class="vc tr"></div>
+    <div class="vc bl"></div><div class="vc br"></div>
+    <div id="sline"></div>
+    <div id="spill"><div class="ldot off" id="dot"></div><span id="stext">Starting...</span></div>
+    <div id="vfhint">Point at barcode · or search below</div>
+  </div>
+  <div id="scan-search-wrap">
+    <div id="scan-results"></div>
+    <svg id="scan-search-icon" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+    <input id="scan-search" type="text" placeholder="Search product by name...">
+  </div>
+  <div id="rsheet">
+    <div class="shandle"></div>
+    <div class="sheader">
+      <img id="rimg" src="" alt="">
+      <div class="smeta"><div id="rcat"></div><div id="rname"></div></div>
+    </div>
+    <div class="shero">
+      <div><div class="sherol">Selling price</div><div class="sherov" id="rsell">৳—</div></div>
+      <div class="sprofit" id="rprofit"></div>
+    </div>
+    <div class="sdetrow">
+      <div class="sdet"><div class="sdetl">Secret code</div><div class="sdetv" id="rcode">—</div></div>
+      <div class="sdet"><div class="sdetl">Purchase price</div><div class="sdetv" id="rpurch">৳—</div></div>
+    </div>
+    <div id="rsource"></div>
+    <button id="rclose">Done</button>
+  </div>
+  <div id="nomatch">
+    <div class="nmico"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/><line x1="11" y1="8" x2="11" y2="11"/><line x1="11" y1="14" x2="11.01" y2="14"/></svg></div>
+    <div id="nmtitle">Barcode not in database</div>
+    <div id="nmdetail">Add this product first from the Add tab</div>
+  </div>
+</div>
+
+<!-- ADD -->
+<div id="page-add" class="page">
+  <div class="phead"><div class="ptitle">Add product</div><div class="psub">Save once, find instantly</div></div>
+  <div class="pbody">
+    <div class="sec">
+      <div class="seclbl">Product photo</div>
+      <div class="phototap" id="phototap">
+        <div class="ptapico"><svg viewBox="0 0 24 24"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg></div>
+        <span id="photohint">Tap to take or pick photo</span>
+        <img id="photopreview" src="" style="display:none">
+      </div>
+      <input type="file" id="fileinput" accept="image/*" capture="environment">
+    </div>
+    <div class="sec">
+      <div class="seclbl">Details</div>
+      <div class="inpgrp">
+        <div class="inprow"><label>Name</label><input type="text" id="iname" placeholder="e.g. Rose Perfume"></div>
+        <div class="inprow"><label>Barcode</label><input type="text" id="ibarcode" placeholder="Optional"></div>
+        <div style="padding:0 16px 12px"><button id="scan-barcode-btn" type="button" class="scanbarbtn">📷 Tap to scan barcode</button></div>
+        <div class="inprow"><label>Category</label><input type="text" id="icat" placeholder="Cosmetics, Toys..."></div>
+        <div class="inprow"><label>Sell ৳</label><input type="number" id="isell" placeholder="350"></div>
+        <div class="inprow" style="border-bottom:1px solid var(--border)"><label>Buy ৳</label><input type="number" id="ibuy" placeholder="250"></div>
+        <div class="coderow"><label>Secret code</label><div id="codedisp">—</div></div>
+      </div>
+    </div>
+    <button class="savebtn" id="savebtn">Save product</button>
+  </div>
+</div>
+
+<!-- PRODUCTS -->
+<div id="page-products" class="page">
+  <div class="prodhead"><div class="prodtitle">My products</div><div class="prodct" id="prodct">Loading...</div></div>
+  <div class="sbox"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg><input id="search" type="text" placeholder="Search products..."></div>
+  <div class="plist" id="prodlist"></div>
+</div>
+
+<!-- BARCODE SCAN MODAL -->
+<div id="bc-modal" style="display:none;position:fixed;inset:0;z-index:200;background:#000">
+  <video id="bc-video" playsinline autoplay muted style="width:100%;height:100%;object-fit:cover"></video>
+  <div style="position:absolute;top:0;left:0;right:0;padding:48px 20px 20px;background:linear-gradient(to bottom,rgba(0,0,0,0.8),transparent);display:flex;align-items:center;gap:16px">
+    <button id="bc-close" style="background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.2);border-radius:50%;width:40px;height:40px;color:#fff;font-size:20px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0">✕</button>
+    <div style="color:#fff;font-size:16px;font-weight:600">Scan barcode</div>
+  </div>
+  <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:80%;aspect-ratio:2/1">
+    <div style="position:absolute;top:0;left:0;width:24px;height:24px;border-top:2.5px solid var(--cyan);border-left:2.5px solid var(--cyan);border-radius:4px 0 0 0"></div>
+    <div style="position:absolute;top:0;right:0;width:24px;height:24px;border-top:2.5px solid var(--cyan);border-right:2.5px solid var(--cyan);border-radius:0 4px 0 0"></div>
+    <div style="position:absolute;bottom:0;left:0;width:24px;height:24px;border-bottom:2.5px solid var(--cyan);border-left:2.5px solid var(--cyan);border-radius:0 0 0 4px"></div>
+    <div style="position:absolute;bottom:0;right:0;width:24px;height:24px;border-bottom:2.5px solid var(--cyan);border-right:2.5px solid var(--cyan);border-radius:0 0 4px 0"></div>
+    <div id="bc-line" style="position:absolute;left:0;right:0;height:2px;background:linear-gradient(to right,transparent,var(--cyan),transparent);box-shadow:0 0 8px var(--cglow);animation:sl 2s ease-in-out infinite"></div>
+  </div>
+  <div style="position:absolute;bottom:20%;left:50%;transform:translateX(-50%);color:rgba(255,255,255,0.5);font-size:13px;white-space:nowrap">Point camera at barcode</div>
+  <div id="bc-status" style="position:absolute;bottom:calc(10% + 80px);left:50%;transform:translateX(-50%);color:rgba(255,255,255,0.6);font-size:13px;white-space:nowrap">Opening camera...</div>
+  <div id="bc-result" style="position:absolute;bottom:10%;left:16px;right:16px;background:rgba(15,21,32,0.95);border:1px solid rgba(0,229,255,0.3);border-radius:16px;padding:14px 18px;text-align:center;display:none">
+    <div style="font-size:11px;color:var(--cyan);margin-bottom:4px">BARCODE DETECTED</div>
+    <div id="bc-code" style="font-size:18px;font-weight:700;color:#fff"></div>
+  </div>
+</div>
+
+<!-- PRICE GROUPS MODAL -->
+<div id="pg-modal" style="display:none;position:fixed;inset:0;z-index:300;align-items:flex-end">
+  <div id="pg-overlay" style="position:absolute;inset:0;background:rgba(0,0,0,0.6);backdrop-filter:blur(6px)"></div>
+  <div style="position:relative;z-index:1;width:100%;background:var(--s1);border-radius:24px 24px 0 0;border-top:1px solid var(--border2);padding:16px 16px 40px">
+    <div style="width:40px;height:4px;background:var(--border2);border-radius:2px;margin:0 auto 16px"></div>
+    <div style="font-size:16px;font-weight:700;color:#1a0f00;margin-bottom:4px">Manage price groups</div>
+    <div style="font-size:12px;color:var(--text2);margin-bottom:16px">Save common prices — tap when scanning unknown products</div>
+    <div id="pg-list" style="margin-bottom:12px"></div>
+    <div style="display:flex;gap:8px">
+      <input id="pg-name" type="text" placeholder="Name e.g. Air Freshener" style="flex:2;background:var(--s2);border:1px solid var(--border2);border-radius:12px;padding:12px 14px;color:var(--text);font-size:14px;font-family:'Poppins',sans-serif;outline:none">
+      <input id="pg-price" type="number" placeholder="৳" style="flex:1;background:var(--s2);border:1px solid var(--border2);border-radius:12px;padding:12px 14px;color:var(--text);font-size:14px;font-family:'Poppins',sans-serif;outline:none">
+      <button id="pg-add-btn" style="background:var(--amber);border:none;border-radius:12px;padding:12px 16px;color:#1a1108;font-size:14px;font-weight:700;font-family:'Poppins',sans-serif;cursor:pointer">Add</button>
+    </div>
+  </div>
+</div>
+
+<!-- NAV -->
+<nav id="nav">
+  <button class="nb active" id="nav-scanner">
+    <svg viewBox="0 0 24 24"><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2"/><rect x="7" y="7" width="10" height="10" rx="1"/></svg>
+    Scanner
+  </button>
+  <button class="nb" id="nav-add">
+    <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+    Add
+  </button>
+  <button class="nb" id="nav-products">
+    <svg viewBox="0 0 24 24"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+    Products
+  </button>
+  <button class="nb" id="nav-groups">
+    <svg viewBox="0 0 24 24"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
+    Groups
+  </button>
+</nav>
+
+<div id="toast"></div>
+<div id="loader" style="display:none"><div class="lring"></div><div class="ltxt" id="loadertxt">Please wait...</div></div>
+
+<script>
+var SB_URL = 'https://yhgnorvhjeotjotgdkkd.supabase.co';
+var SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InloZ25vcnZoamVvdGpvdGdka2tkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc5NTYxNjMsImV4cCI6MjA5MzUzMjE2M30.fLDr5UQ_oJkbipDs-65JouE2JZF0ia95BRzpxF2TzRc';
+var ENC = {'1':'V','2':'M','3':'S','4':'L','5':'K','6':'N','7':'Y','8':'P','9':'R','0':'T'};
+var DEC = {'V':'1','M':'2','S':'3','L':'4','K':'5','N':'6','Y':'7','P':'8','R':'9','T':'0'};
+function encode(p){return String(p).split('').map(function(d){return ENC[d]||d;}).join('');}
+function decode(c){return String(c).toUpperCase().split('').map(function(x){return DEC[x]||x;}).join('');}
+var db = supabase.createClient(SB_URL, SB_KEY);
+
+// TOAST
+var tTimer;
+function toast(msg,type){
+  var t=document.getElementById('toast');
+  t.textContent=msg;t.className='show'+(type?' '+type:'');
+  clearTimeout(tTimer);tTimer=setTimeout(function(){t.className='';},3000);
+}
+
+// LOADER
+function setLoader(v,msg){
+  document.getElementById('loader').style.display=v?'flex':'none';
+  if(msg) document.getElementById('loadertxt').textContent=msg;
+}
+
+// SECRET CODE
+document.getElementById('ibuy').addEventListener('input',function(){
+  document.getElementById('codedisp').textContent=this.value?encode(this.value):'—';
+});
+
+// PHOTO
+var selFile=null;
+document.getElementById('phototap').addEventListener('click',function(){
+  document.getElementById('fileinput').click();
+});
+document.getElementById('fileinput').addEventListener('change',function(e){
+  var file=e.target.files[0]; if(!file) return;
+  selFile=file;
+  var r=new FileReader();
+  r.onload=function(ev){
+    document.getElementById('photopreview').src=ev.target.result;
+    document.getElementById('photopreview').style.display='block';
+    document.getElementById('photohint').style.display='none';
+    document.querySelector('.ptapico').style.display='none';
+  };
+  r.readAsDataURL(file);
+});
+
+function resize(file,max){
+  return new Promise(function(resolve){
+    var r=new FileReader();
+    r.onload=function(e){
+      var img=new Image();
+      img.onload=function(){
+        var c=document.createElement('canvas');
+        var w=img.width,h=img.height;
+        if(w>h&&w>max){h=Math.round(h*max/w);w=max;}
+        else if(h>max){w=Math.round(w*max/h);h=max;}
+        c.width=w;c.height=h;
+        c.getContext('2d').drawImage(img,0,0,w,h);
+        resolve(c.toDataURL('image/jpeg',0.65));
+      };
+      img.src=e.target.result;
+    };
+    r.readAsDataURL(file);
+  });
+}
+
+// SAVE PRODUCT
+document.getElementById('savebtn').addEventListener('click',async function(){
+  var name=document.getElementById('iname').value.trim();
+  var sell=document.getElementById('isell').value.trim();
+  var buy=document.getElementById('ibuy').value.trim();
+  var cat=document.getElementById('icat').value.trim();
+  var barcode=document.getElementById('ibarcode').value.trim();
+  if(!name||!sell||!buy||!selFile){toast('Fill name, prices and add a photo','err');return;}
+  setLoader(true,'Processing photo...');
+  try{
+    var img=await resize(selFile,200);
+    setLoader(true,'Saving...');
+    var res=await db.from('products').insert({
+      name:name,selling_price:parseFloat(sell),
+      purchase_code:encode(buy),image_url:img,
+      category:cat||null,barcode:barcode||null
+    });
+    if(res.error) throw new Error(res.error.message);
+    toast('Product saved!','ok');
+    document.getElementById('iname').value='';
+    document.getElementById('isell').value='';
+    document.getElementById('ibuy').value='';
+    document.getElementById('icat').value='';
+    document.getElementById('ibarcode').value='';
+    document.getElementById('codedisp').textContent='—';
+    document.getElementById('photopreview').style.display='none';
+    document.getElementById('photohint').style.display='';
+    document.querySelector('.ptapico').style.display='';
+    selFile=null;
+    await loadAllProducts();
+  }catch(e){toast('Error: '+e.message,'err');}
+  setLoader(false);
+});
+
+// NAV
+function goPage(name){
+  document.querySelectorAll('.page').forEach(function(p){p.classList.remove('active');});
+  document.querySelectorAll('.nb').forEach(function(b){b.classList.remove('active');});
+  document.getElementById('page-'+name).classList.add('active');
+  document.getElementById('nav-'+name).classList.add('active');
+  if(name==='scanner'){startScanner();}else{stopScanner();}
+  if(name==='products'){loadProducts();}
+}
+document.getElementById('nav-scanner').addEventListener('click',function(){goPage('scanner');});
+document.getElementById('nav-add').addEventListener('click',function(){goPage('add');});
+document.getElementById('nav-products').addEventListener('click',function(){goPage('products');});
+document.getElementById('rclose').addEventListener('click',function(){closeResult();});
+
+// ALL PRODUCTS CACHE
+var allProducts=[];
+async function loadAllProducts(){
+  var res=await db.from('products').select('*');
+  allProducts=res.data||[];
+  document.getElementById('pbadge').textContent=allProducts.length+' products';
+}
+
+// SHOW RESULT
+var resultVisible=false;
+function showResult(p,source){
+  resultVisible=true;
+  document.getElementById('nomatch').classList.remove('show');
+  document.getElementById('scan-results').style.display='none';
+  document.getElementById('rimg').src=p.image_url;
+  document.getElementById('rcat').textContent=p.category||'Product';
+  document.getElementById('rname').textContent=p.name;
+  document.getElementById('rsell').textContent='৳'+p.selling_price;
+  document.getElementById('rcode').textContent=p.purchase_code;
+  document.getElementById('rpurch').textContent='৳'+decode(p.purchase_code);
+  var profit=p.selling_price-parseInt(decode(p.purchase_code));
+  document.getElementById('rprofit').textContent='+৳'+profit+' profit';
+  document.getElementById('rsource').textContent=source||'';
+  document.getElementById('rsheet').classList.add('show');
+}
+
+function showNoMatch(title,detail){
+  document.getElementById('rsheet').classList.remove('show');
+  document.getElementById('nmtitle').textContent=title;
+  document.getElementById('nmdetail').textContent=detail;
+  var nm=document.getElementById('nomatch');
+  nm.classList.add('show');
+  setTimeout(function(){nm.classList.remove('show');},3000);
+}
+
+function closeResult(){
+  resultVisible=false;
+  document.getElementById('rsheet').classList.remove('show');
+  document.getElementById('scan-search').value='';
+  document.getElementById('scan-results').style.display='none';
+}
+
+// ── BARCODE SCANNER ──
+var scanStream=null,codeReader=null;
+
+async function startScanner(){
+  await loadAllProducts();
+  if(scanStream) return;
+  var video=document.getElementById('video');
+  try{
+    scanStream=await navigator.mediaDevices.getUserMedia({
+      video:{facingMode:'environment',width:{ideal:1280},height:{ideal:960}},audio:false
+    });
+    video.srcObject=scanStream;
+    await video.play();
+    document.getElementById('dot').className='ldot ready';
+    document.getElementById('stext').textContent='Point at barcode or search';
+    startBarcodeReader();
+  }catch(e){
+    document.getElementById('stext').textContent='Camera unavailable';
+    document.getElementById('dot').className='ldot off';
+  }
+}
+
+function startBarcodeReader(){
+  if(!('BarcodeDetector' in window)){
+    document.getElementById('stext').textContent='Barcode scan: search by name';
+    return;
+  }
+  var detector=new BarcodeDetector({formats:['ean_13','ean_8','qr_code','code_128','code_39','upc_a','upc_e','itf','codabar']});
+  var video=document.getElementById('video');
+  var canvas=document.getElementById('canvas');
+  function scanLoop(){
+    if(!scanStream) return;
+    if(resultVisible){setTimeout(scanLoop,500);return;}
+    canvas.width=video.videoWidth||640;
+    canvas.height=video.videoHeight||480;
+    canvas.getContext('2d').drawImage(video,0,0);
+    detector.detect(canvas).then(function(codes){
+      if(codes.length>0){
+        handleBarcode(codes[0].rawValue);
+      }
+      setTimeout(scanLoop,300);
+    }).catch(function(){
+      setTimeout(scanLoop,500);
+    });
+  }
+  scanLoop();
+}
+
+function showSearchList(products, title){
+  var html='<div style="padding:10px 16px 6px;font-size:11px;color:var(--amber);font-weight:600">'+title+'</div>';
+  for(var i=0;i<products.length;i++){
+    var p=products[i];
+    html+='<div class="sresult" data-idx="'+i+'">'+
+      '<img src="'+p.image_url+'" alt="'+p.name+'">'+
+      '<div class="sresult-info">'+
+        '<div class="sresult-name">'+p.name+'</div>'+
+        '<div class="sresult-price">৳'+p.selling_price+'</div>'+
+      '</div></div>';
+  }
+  var box=document.getElementById('scan-results');
+  box.innerHTML=html; box.style.display='block';
+  var items=box.querySelectorAll('.sresult');
+  for(var j=0;j<items.length;j++){
+    (function(el,idx){
+      el.addEventListener('click',function(){
+        showResult(products[idx],'Selected from similar products');
+        box.style.display='none';
+      });
+    })(items[j],j);
+  }
+}
+
+var lastBarcode='';
+var lastBarcodeTime=0;
+function handleBarcode(code){
+  var now=Date.now();
+  if(code===lastBarcode && now-lastBarcodeTime<3000) return;
+  lastBarcode=code;
+  lastBarcodeTime=now;
+  document.getElementById('dot').className='ldot scan';
+  document.getElementById('stext').textContent='Barcode: '+code;
+
+  // 1. Exact match first
+  var match=null;
+  for(var i=0;i<allProducts.length;i++){
+    if(allProducts[i].barcode===code){match=allProducts[i];break;}
+  }
+  if(match){ showResult(match,'Exact match'); return; }
+
+  // 2. Try prefix: 10 digits → 8 digits → 7 digits
+  var prefixes=[10,8,7];
+  for(var pi=0;pi<prefixes.length;pi++){
+    var plen=prefixes[pi];
+    if(code.length<plen) continue;
+    var pre=code.substring(0,plen);
+    var found=[];
+    for(var i=0;i<allProducts.length;i++){
+      var p=allProducts[i];
+      if(p.barcode && p.barcode.length>=plen && p.barcode.substring(0,plen)===pre){
+        found.push(p);
+      }
+    }
+    if(found.length===1){
+      showResult(found[0],'Same brand variant ('+plen+' digits matched)');
+      return;
+    }
+    if(found.length>1){
+      // Multiple matches — show list to pick
+      showSearchList(found,'Same brand — tap correct price:');
+      return;
+    }
+  }
+  showNoMatch('Product not found','Add this product first: '+code);
+  setTimeout(function(){
+    document.getElementById('dot').className='ldot ready';
+    document.getElementById('stext').textContent='Point at barcode or search';
+  },2000);
+}
+
+
+
+function stopScanner(){
+  if(codeReader){try{codeReader.reset();}catch(e){}codeReader=null;}
+  if(scanStream){scanStream.getTracks().forEach(function(t){t.stop();});scanStream=null;}
+}
+
+// ── NAME SEARCH ──
+var searchTimer;
+document.getElementById('scan-search').addEventListener('input',function(){
+  var q=this.value.trim();
+  clearTimeout(searchTimer);
+  if(!q){document.getElementById('scan-results').style.display='none';return;}
+  searchTimer=setTimeout(function(){
+    var q2=q.toLowerCase();
+    var matches=[];
+    for(var i=0;i<allProducts.length;i++){
+      var p=allProducts[i];
+      if(p.name.toLowerCase().indexOf(q2)!==-1||(p.category||'').toLowerCase().indexOf(q2)!==-1){
+        matches.push(p);
+        if(matches.length>=6) break;
+      }
+    }
+    renderSearchResults(matches);
+  },200);
+});
+
+function renderSearchResults(arr){
+  var box=document.getElementById('scan-results');
+  if(!arr.length){box.style.display='none';return;}
+  var html='';
+  for(var i=0;i<arr.length;i++){
+    var p=arr[i];
+    html+='<div class="sresult" data-idx="'+i+'" data-id="'+p.id+'">'+
+      '<img src="'+p.image_url+'" alt="'+p.name+'">'+
+      '<div class="sresult-info">'+
+        '<div class="sresult-name">'+p.name+'</div>'+
+        '<div class="sresult-price">৳'+p.selling_price+'</div>'+
+      '</div>'+
+    '</div>';
+  }
+  box.innerHTML=html;
+  box.style.display='block';
+  var items=box.querySelectorAll('.sresult');
+  for(var j=0;j<items.length;j++){
+    (function(el,idx){
+      el.addEventListener('click',function(){
+        showResult(arr[idx],'Found by name search');
+        document.getElementById('scan-search').value='';
+        document.getElementById('scan-results').style.display='none';
+      });
+    })(items[j],j);
+  }
+}
+
+// Close search results when tapping outside
+document.getElementById('video').addEventListener('click',function(){
+  document.getElementById('scan-results').style.display='none';
+  document.getElementById('scan-search').blur();
+});
+
+// ── PRODUCTS LIST ──
+var allCache=[];
+async function loadProducts(){
+  var list=document.getElementById('prodlist');
+  list.innerHTML='<div style="text-align:center;color:var(--text2);padding:32px;font-size:14px">Loading...</div>';
+  var res=await db.from('products').select('*').order('created_at',{ascending:false});
+  allCache=res.data||[];
+  document.getElementById('prodct').textContent=allCache.length+' products saved';
+  renderProducts(allCache);
+}
+
+function renderProducts(arr){
+  var list=document.getElementById('prodlist');
+  if(!arr.length){
+    list.innerHTML='<div class="empty"><div class="emptytitle">No products yet</div><div class="emptysub">Go to Add tab to save your first product.</div></div>';
+    return;
+  }
+  var html='';
+  for(var i=0;i<arr.length;i++){
+    var p=arr[i];
+    html+='<div class="pcard">'+
+      '<img src="'+p.image_url+'" alt="'+p.name+'">'+
+      '<div class="pcinfo">'+
+        '<div class="pcname">'+p.name+'</div>'+
+        '<div class="pcprices"><span class="pcsell">৳'+p.selling_price+'</span><span class="pccode">'+p.purchase_code+' = ৳'+decode(p.purchase_code)+'</span></div>'+
+        (p.barcode?'<div class="pcbc">Barcode: '+p.barcode+'</div>':'')+
+        (p.category?'<div class="pcbc">'+p.category+'</div>':'')+
+      '</div>'+
+      '<button class="pcdel" data-id="'+p.id+'">'+
+        '<svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>'+
+      '</button>'+
+    '</div>';
+  }
+  list.innerHTML=html;
+  var dels=document.querySelectorAll('.pcdel');
+  for(var j=0;j<dels.length;j++){
+    dels[j].addEventListener('click',function(){delProduct(this.getAttribute('data-id'));});
+  }
+}
+
+document.getElementById('search').addEventListener('input',function(){
+  var q=this.value.toLowerCase();
+  var filtered=[];
+  for(var i=0;i<allCache.length;i++){
+    var p=allCache[i];
+    if(p.name.toLowerCase().indexOf(q)!==-1||(p.category||'').toLowerCase().indexOf(q)!==-1) filtered.push(p);
+  }
+  renderProducts(filtered);
+});
+
+async function delProduct(id){
+  if(!confirm('Delete this product?')) return;
+  var res=await db.from('products').delete().eq('id',id);
+  if(res.error){toast('Delete failed','err');return;}
+  toast('Deleted','ok');
+  loadProducts();
+  loadAllProducts();
+}
+
+// BARCODE SCANNER FOR ADD PAGE
+var bcStream = null, bcReader = null;
+
+document.getElementById('scan-barcode-btn').addEventListener('click', function(){
+  openBcScanner();
+});
+
+document.getElementById('bc-close').addEventListener('click', function(){
+  closeBcScanner();
+});
+
+function openBcScanner(){
+  var modal = document.getElementById('bc-modal');
+  modal.style.display = 'block';
+  document.getElementById('bc-result').style.display = 'none';
+  document.getElementById('bc-status').textContent = 'Opening camera...';
+  navigator.mediaDevices.getUserMedia({
+    video:{facingMode:'environment',width:{ideal:1280},height:{ideal:960}},audio:false
+  }).then(function(stream){
+    bcStream = stream;
+    var vid = document.getElementById('bc-video');
+    vid.srcObject = stream;
+    return vid.play();
+  }).then(function(){
+    document.getElementById('bc-status').textContent = 'Point at barcode';
+    startBcReader();
+  }).catch(function(e){
+    toast('Camera error: '+e.message,'err');
+    closeBcScanner();
+  });
+}
+
+function startBcReader(){
+  var vid = document.getElementById('bc-video');
+  var c = document.createElement('canvas');
+  var detected = false;
+
+  function onDetected(code){
+    if(detected) return;
+    detected = true;
+    document.getElementById('bc-code').textContent = code;
+    document.getElementById('bc-result').style.display = 'block';
+    document.getElementById('bc-status').textContent = 'Got it!';
+    setTimeout(function(){
+      document.getElementById('ibarcode').value = code;
+      closeBcScanner();
+      toast('Barcode: '+code,'ok');
+    }, 700);
+  }
+
+  if('BarcodeDetector' in window){
+    var detector = new BarcodeDetector({formats:['ean_13','ean_8','qr_code','code_128','code_39','upc_a','upc_e','itf']});
+    function loop(){
+      if(!bcStream || detected) return;
+      c.width = vid.videoWidth||640; c.height = vid.videoHeight||480;
+      c.getContext('2d').drawImage(vid,0,0);
+      detector.detect(c).then(function(codes){
+        if(codes.length > 0) onDetected(codes[0].rawValue);
+        else setTimeout(loop, 250);
+      }).catch(function(){ setTimeout(loop, 400); });
+    }
+    setTimeout(loop, 500);
+  } else if(typeof ZXing !== 'undefined'){
+    try{
+      bcReader = new ZXing.BrowserMultiFormatReader();
+      bcReader.decodeFromVideoElement(vid, function(result, err){
+        if(result) onDetected(result.getText());
+      });
+    }catch(e){ document.getElementById('bc-status').textContent = 'Scanning...'; }
+  } else {
+    document.getElementById('bc-status').textContent = 'Scanner not supported — type barcode manually';
+  }
+}
+
+function closeBcScanner(){
+  if(bcReader){try{bcReader.reset();}catch(e){}bcReader=null;}
+  if(bcStream){bcStream.getTracks().forEach(function(t){t.stop();});bcStream=null;}
+  document.getElementById('bc-modal').style.display = 'none';
+}
+
+// PRICE GROUPS
+var priceGroups = [];
+
+async function loadPriceGroups(){
+  try{
+    var res = await db.from('settings').select('value').eq('key','price_groups').single();
+    if(res.data && res.data.value){
+      priceGroups = JSON.parse(res.data.value);
+    }
+  }catch(e){ priceGroups=[]; }
+  renderPriceGroupBtns();
+  renderPgList();
+}
+
+async function savePriceGroups(){
+  await db.from('settings').upsert({key:'price_groups', value:JSON.stringify(priceGroups)});
+}
+
+function renderPriceGroupBtns(){
+  var box = document.getElementById('price-groups');
+  if(!box) return;
+  if(!priceGroups.length){
+    box.innerHTML='<div style="font-size:12px;color:var(--text3);width:100%;text-align:center">No price groups yet — tap Groups tab to add</div>';
+    return;
+  }
+  box.innerHTML = priceGroups.map(function(g,i){
+    return '<button class="pg-btn" data-idx="'+i+'" style="background:linear-gradient(135deg,#fff3e0,#ffe0b2);border:1.5px solid rgba(224,120,0,0.3);border-radius:12px;padding:12px 18px;color:#7a3d00;font-size:14px;font-weight:700;font-family:Poppins,sans-serif;cursor:pointer;min-width:100px">'+g.name+'<br><span style="font-size:13px;color:var(--amber);font-weight:800">৳'+g.price+'</span></button>';
+  }).join('');
+  var btns = box.querySelectorAll('.pg-btn');
+  for(var i=0;i<btns.length;i++){
+    (function(btn,idx){
+      btn.addEventListener('click',function(){
+        var g = priceGroups[idx];
+        showPriceGroupResult(g, lastBarcode);
+      });
+    })(btns[i],i);
+  }
+}
+
+function showPriceGroupResult(group, barcode){
+  document.getElementById('nomatch').classList.remove('show');
+  document.getElementById('rimg').src='';
+  document.getElementById('rcat').textContent = group.name;
+  document.getElementById('rname').textContent = group.name;
+  document.getElementById('rsell').textContent = '৳'+group.price;
+  document.getElementById('rcode').textContent = '—';
+  document.getElementById('rpurch').textContent = '৳—';
+  document.getElementById('rprofit').textContent = '';
+  document.getElementById('rsource').textContent = 'Price group match · barcode: '+barcode;
+  document.getElementById('rsheet').classList.add('show');
+  resultVisible = true;
+}
+
+function renderPgList(){
+  var list = document.getElementById('pg-list');
+  if(!list) return;
+  if(!priceGroups.length){
+    list.innerHTML='<div style="text-align:center;color:var(--text3);font-size:13px;padding:12px">No groups yet</div>';
+    return;
+  }
+  list.innerHTML = priceGroups.map(function(g,i){
+    return '<div style="display:flex;align-items:center;padding:12px 0;border-bottom:1px solid var(--border)">'+
+      '<div style="flex:1"><div style="font-size:14px;font-weight:600;color:var(--text)">'+g.name+'</div>'+
+      '<div style="font-size:14px;color:var(--amber);font-weight:700;margin-top:2px">৳'+g.price+'</div></div>'+
+      '<button data-del="'+i+'" style="background:rgba(224,48,48,0.08);border:1px solid rgba(224,48,48,0.15);border-radius:8px;color:var(--red);font-size:13px;font-weight:600;cursor:pointer;padding:6px 10px;font-family:Poppins,sans-serif">Delete</button>'+
+    '</div>';
+  }).join('');
+  var dels = list.querySelectorAll('[data-del]');
+  for(var i=0;i<dels.length;i++){
+    dels[i].addEventListener('click',async function(){
+      var idx = parseInt(this.getAttribute('data-del'));
+      priceGroups.splice(idx,1);
+      await savePriceGroups();
+      renderPgList();
+      renderPriceGroupBtns();
+      toast('Deleted','ok');
+    });
+  }
+}
+
+function initPriceGroupListeners(){
+  var pgAdd = document.getElementById('pg-add-btn');
+  var pgOverlay = document.getElementById('pg-overlay');
+  var navGroups = document.getElementById('nav-groups');
+  var nmAdd = document.getElementById('nm-add-btn');
+  var nmDismiss = document.getElementById('nm-dismiss');
+
+  if(pgAdd) pgAdd.addEventListener('click', async function(){
+    var name = document.getElementById('pg-name').value.trim();
+    var price = document.getElementById('pg-price').value.trim();
+    if(!name||!price){toast('Enter name and price','err');return;}
+    priceGroups.push({name:name, price:parseFloat(price)});
+    await savePriceGroups();
+    document.getElementById('pg-name').value='';
+    document.getElementById('pg-price').value='';
+    renderPgList();
+    renderPriceGroupBtns();
+    toast('Price group added!','ok');
+  });
+
+  if(pgOverlay) pgOverlay.addEventListener('click',function(){
+    document.getElementById('pg-modal').style.display='none';
+  });
+
+  var pgClose = document.getElementById('pg-close-btn');
+  if(pgClose) pgClose.addEventListener('click',function(){
+    document.getElementById('pg-modal').style.display='none';
+  });
+
+  if(navGroups) navGroups.addEventListener('click',function(){
+    document.getElementById('pg-modal').style.display='flex';
+  });
+
+  if(nmAdd) nmAdd.addEventListener('click',function(){
+    document.getElementById('nomatch').classList.remove('show');
+    goPage('add');
+  });
+
+  if(nmDismiss) nmDismiss.addEventListener('click',function(){
+    document.getElementById('nomatch').classList.remove('show');
+  });
+}
+
+// START
+document.addEventListener("DOMContentLoaded", function(){
+  initPriceGroupListeners();
+  loadPriceGroups();
+  startScanner();
+});
+</script>
+</body>
+</html>
